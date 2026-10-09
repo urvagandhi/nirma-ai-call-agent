@@ -69,6 +69,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     logger.info("Shutting down %s...", settings.app_name)
+    try:
+        from backend.telephony.webhook_handler import redis_client
+        await redis_client.aclose()
+
+        from backend.database.session import async_engine
+        await async_engine.dispose()
+        logger.info("Redis and database connection pools successfully disposed.")
+    except Exception as exc:
+        logger.warning("Error during resource shutdown disposal: %s", str(exc))
 
 
 # Create core FastAPI application instance

@@ -1,12 +1,16 @@
 """
-Plivo Telephony Adapter Module — Asynchronous Wrapper for Plivo Voice API.
+Plivo Telephony Adapter Module — Synchronous & Asynchronous Carrier Dispatch.
 
 This module implements the `BaseTelephonyAdapter` interface for Plivo Cloud Telephony.
 
-CONCURRENCY GUARANTEE:
-    The official `plivo.RestClient` is synchronous and performs blocking HTTP calls.
-    To prevent blocking FastAPI's asyncio event loop, all SDK calls are wrapped inside
-    `asyncio.to_thread()` execution blocks.
+CONCURRENCY & EXECUTION ARCHITECTURE:
+    - Synchronous Worker Execution (`place_call_sync`): Used by Celery multiprocessing
+      worker tasks (`place_call_task`) to dispatch carrier requests directly. This eliminates
+      the performance overhead and thread contention of creating one-off asyncio event loops
+      inside synchronous Celery worker processes.
+    - Asynchronous Route Execution (`place_call`): For callers operating inside FastAPI's
+      asyncio event loop, SDK calls are executed via `asyncio.to_thread()` to prevent
+      stalling the ASGI non-blocking I/O event loop.
 
 Dependencies:
     - plivo >= 4.38
@@ -93,6 +97,33 @@ class PlivoAdapter(BaseTelephonyAdapter):
         except Exception as exc:
             logger.error("Plivo API call creation failed: %s", exc, exc_info=True)
             return CallDispatchResult(call_uuid="", status="failed", error=str(exc))
+
+    def place_call_sync(
+        self,
+        to_number: str,
+        answer_url: str,
+        hangup_url: str,
+        caller_id: str,
+    ) -> CallDispatchResult:
+        """
+        Initiates outbound PSTN call synchronously for Celery multiprocessing workers.
+        Avoids spinning up redundant asyncio event loops inside synchronous background tasks.
+
+        Args:
+            to_number: Recipient number in E.164 format.
+            answer_url: Answer webhook URL.
+            hangup_url: Hangup webhook URL.
+            caller_id: Registered DID phone number.
+
+        Returns:
+            CallDispatchResult: Call dispatch outcome.
+        """
+        return self._sync_create_call(
+            to_number,
+            answer_url,
+            hangup_url,
+            caller_id,
+        )
 
     async def place_call(
         self,

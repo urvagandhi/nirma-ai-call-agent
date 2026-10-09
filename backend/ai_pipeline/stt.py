@@ -164,6 +164,21 @@ class SarvamSTT(STTAdapter):
         """
         self.api_key = api_key or settings.sarvam_api_key
         self.api_url = "https://api.sarvam.ai/speech-to-text"
+        self._client: Optional[httpx.AsyncClient] = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Returns or lazily creates a persistent pooled AsyncClient."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(12.0, connect=3.0),
+                limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+            )
+        return self._client
+
+    async def aclose(self) -> None:
+        """Gracefully closes persistent HTTP connection pool."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
 
     def _map_language_code(self, lang: str) -> str:
         """
@@ -200,11 +215,12 @@ class SarvamSTT(STTAdapter):
         if not self.api_key:
             raise ValueError("SARVAM_API_KEY environment variable is not configured.")
 
-        # Step 1: Download audio buffer from carrier
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            audio_resp = await client.get(audio_url)
-            audio_resp.raise_for_status()
-            audio_bytes = audio_resp.content
+        client = await self._get_client()
+
+        # Step 1: Download audio buffer from carrier using pooled connection
+        audio_resp = await client.get(audio_url)
+        audio_resp.raise_for_status()
+        audio_bytes = audio_resp.content
 
         # Step 2: Dispatch binary audio to Sarvam AI
         files = {"file": ("caller_audio.wav", audio_bytes, "audio/wav")}
@@ -215,11 +231,10 @@ class SarvamSTT(STTAdapter):
         }
         headers = {"api-subscription-key": self.api_key}
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(self.api_url, headers=headers, files=files, data=data)
-            resp.raise_for_status()
-            result = resp.json()
-            return result.get("transcript", "").strip()
+        resp = await client.post(self.api_url, headers=headers, files=files, data=data)
+        resp.raise_for_status()
+        result = resp.json()
+        return result.get("transcript", "").strip()
 
 
 class FallbackSTT(STTAdapter):

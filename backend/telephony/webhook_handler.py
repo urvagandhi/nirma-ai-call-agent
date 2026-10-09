@@ -32,6 +32,7 @@ from backend.ai_pipeline.pipeline import AIPipeline
 from backend.config import settings
 from backend.database.models import CallLog, CallScript, CallTask
 from backend.database.session import async_session_scope
+from backend.websocket.manager import ws_manager
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +148,20 @@ async def handle_answer(
     await redis_client.expire(session_key, 600)  # Mandatory 600s TTL
     logger.info("Initialized Redis call session key '%s' with TTL=600s", session_key)
 
-    # 4. Construct Plivo XML response
+    # 4. Broadcast live status update to WebSocket clients
+    await ws_manager.broadcast(
+        "call_status",
+        {
+            "task_id": task_id,
+            "call_uuid": call_uuid,
+            "status": "in_progress",
+            "lang": language,
+            "from_number": from_number,
+            "to_number": to_number,
+        },
+    )
+
+    # 5. Construct Plivo XML response
     input_action_url = settings.build_webhook_url(f"/webhook/plivo/input?task_id={task_id}")
     xml_content = _build_plivo_xml_response(
         audio_url=opening_audio_url,
@@ -254,6 +268,23 @@ async def handle_input(
         silence_seconds=2,
     )
 
+    # Broadcast turn dialogue and latency metrics to connected dashboard operators
+    turn_latency = 1800
+    if "turn_result" in locals() and isinstance(turn_result, dict):
+        turn_latency = turn_result.get("latency", {}).get("total_ms", 1800)
+
+    await ws_manager.broadcast(
+        "transcript_turn",
+        {
+            "task_id": task_id,
+            "call_uuid": call_uuid,
+            "turn": turn_count,
+            "user_transcript": user_transcript,
+            "assistant_reply": assistant_reply,
+            "latency_ms": turn_latency,
+        },
+    )
+
     return Response(content=xml_content, media_type="application/xml")
 
 
@@ -309,6 +340,17 @@ async def handle_hangup(
 
     # Delete Redis session context
     await redis_client.delete(session_key)
+
+    # Broadcast call termination status to WebSocket clients
+    await ws_manager.broadcast(
+        "call_status",
+        {
+            "task_id": task_id,
+            "call_uuid": call_uuid,
+            "status": "completed",
+            "duration_sec": duration,
+        },
+    )
 
     xml_content = _build_plivo_xml_response(hangup=True)
     return Response(content=xml_content, media_type="application/xml")

@@ -65,6 +65,34 @@ class BaseTelephonyAdapter(ABC):
         """
         pass
 
+    def place_call_sync(
+        self,
+        to_number: str,
+        answer_url: str,
+        hangup_url: str,
+        caller_id: str,
+    ) -> CallDispatchResult:
+        """
+        Initiates an outbound PSTN call synchronously.
+
+        Designed specifically for Celery background multiprocessing worker tasks to
+        dispatch calls directly to the carrier REST API without the latency overhead
+        and thread thrashing of instantiating one-off asyncio event loops.
+
+        Args:
+            to_number: Recipient phone number in E.164 format (e.g. '+919876543210').
+            answer_url: Fully qualified HTTPS webhook URL triggered when call is answered.
+            hangup_url: Fully qualified HTTPS webhook URL triggered upon call disconnection.
+            caller_id: Registered DID phone number matching carrier account credentials.
+
+        Returns:
+            CallDispatchResult: Carrier UUID and initial dispatch status.
+
+        Raises:
+            TelephonyCarrierException: If network or carrier authentication fails.
+        """
+        raise NotImplementedError("Synchronous call placement not implemented for this adapter.")
+
     @abstractmethod
     async def hangup_call(self, call_uuid: str) -> bool:
         """

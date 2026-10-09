@@ -41,6 +41,7 @@ async_engine: AsyncEngine = create_async_engine(
     max_overflow=10,
     pool_pre_ping=True,
     pool_recycle=1800,  # Recycle connections every 30 minutes
+    connect_args={"statement_cache_size": 100},  # Optimize asyncpg prepared statement caching
 )
 
 async_session_factory = async_sessionmaker(
@@ -49,6 +50,9 @@ async_session_factory = async_sessionmaker(
     expire_on_commit=False,
     autoflush=False,
 )
+
+# Canonical alias exported for FastAPI dependency and healthcheck probes
+AsyncSessionLocal = async_session_factory
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:

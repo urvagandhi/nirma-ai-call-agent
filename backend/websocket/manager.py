@@ -15,9 +15,10 @@ Dependencies:
     - python-jose >= 3.3
 """
 
+import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Set
+from typing import Any, Dict, Optional, Set
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from jose import JWTError, jwt
 
@@ -63,7 +64,7 @@ class ConnectionManager:
 
     async def broadcast(self, event_type: str, data: Dict[str, Any]) -> None:
         """
-        Broadcasts a structured JSON telemetry envelope to all registered clients.
+        Broadcasts a structured JSON telemetry envelope concurrently to all registered clients.
 
         Args:
             event_type: Category identifier ('call_status', 'transcript_turn', 'call_alert').
@@ -78,18 +79,24 @@ class ConnectionManager:
             "data": data,
         }
 
-        disconnected: Set[WebSocket] = set()
-
-        for connection in list(self.active_connections):
+        async def _send_safe(conn: WebSocket) -> Optional[WebSocket]:
             try:
-                await connection.send_json(envelope)
+                await conn.send_json(envelope)
+                return None
             except Exception as exc:
                 logger.warning("Failed to send WebSocket message to client: %s", str(exc))
-                disconnected.add(connection)
+                return conn
 
-        # Cleanup broken sockets
-        for conn in disconnected:
-            self.disconnect(conn)
+        # Performance Optimization: Broadcast concurrently across all connected operators
+        connections = list(self.active_connections)
+        results = await asyncio.gather(
+            *[_send_safe(conn) for conn in connections],
+            return_exceptions=True,
+        )
+
+        for res in results:
+            if isinstance(res, WebSocket):
+                self.disconnect(res)
 
 
 # Global singleton instance

@@ -95,6 +95,21 @@ class OllamaLLM(LLMAdapter):
         self.base_url = (base_url or settings.ollama_base_url).rstrip("/")
         self.model = model or settings.ollama_model
         self.timeout_seconds = timeout_seconds
+        self._client: Optional[httpx.AsyncClient] = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Returns or lazily creates a persistent pooled AsyncClient for local Ollama."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(self.timeout_seconds, connect=1.5),
+                limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+            )
+        return self._client
+
+    async def aclose(self) -> None:
+        """Gracefully closes persistent HTTP connection pool."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
 
     async def generate(
         self,
@@ -135,15 +150,15 @@ class OllamaLLM(LLMAdapter):
         }
 
         endpoint = f"{self.base_url}/api/chat"
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            resp = await client.post(endpoint, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            message_obj = data.get("message", {})
-            raw_content = message_obj.get("content", "").strip()
+        client = await self._get_client()
+        resp = await client.post(endpoint, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        message_obj = data.get("message", {})
+        raw_content = message_obj.get("content", "").strip()
 
-            # Clean any inadvertent markdown asterisks
-            return raw_content.replace("*", "").replace("#", "").strip()
+        # Clean any inadvertent markdown asterisks
+        return raw_content.replace("*", "").replace("#", "").strip()
 
 
 class GroqLLM(LLMAdapter):
@@ -172,6 +187,21 @@ class GroqLLM(LLMAdapter):
         self.model = model
         self.endpoint = "https://api.groq.com/openai/v1/chat/completions"
         self.timeout_seconds = timeout_seconds
+        self._client: Optional[httpx.AsyncClient] = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Returns or lazily creates a persistent pooled AsyncClient for Groq Cloud."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(self.timeout_seconds, connect=2.0),
+                limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+            )
+        return self._client
+
+    async def aclose(self) -> None:
+        """Gracefully closes persistent HTTP connection pool."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
 
     async def generate(
         self,
@@ -213,12 +243,12 @@ class GroqLLM(LLMAdapter):
             "temperature": 0.3,
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            resp = await client.post(self.endpoint, headers=headers, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
-            return content.replace("*", "").replace("#", "").strip()
+        client = await self._get_client()
+        resp = await client.post(self.endpoint, headers=headers, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"]
+        return content.replace("*", "").replace("#", "").strip()
 
 
 class FallbackLLM(LLMAdapter):

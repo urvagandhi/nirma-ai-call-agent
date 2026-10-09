@@ -120,14 +120,12 @@ def place_call_task(self, call_task_id: int) -> Optional[str]:
         adapter = PlivoAdapter(settings.plivo_auth_id, settings.plivo_auth_token)
 
         try:
-            # Execute Plivo API call asynchronously inside worker thread
-            result = asyncio.run(
-                adapter.place_call(
-                    to_number=task.student_phone,
-                    answer_url=answer_url,
-                    hangup_url=hangup_url,
-                    caller_id=settings.plivo_caller_id,
-                )
+            # Execute Plivo API call synchronously with zero asyncio event loop overhead
+            result = adapter.place_call_sync(
+                to_number=task.student_phone,
+                answer_url=answer_url,
+                hangup_url=hangup_url,
+                caller_id=settings.plivo_caller_id,
             )
 
             if result.status == "queued":

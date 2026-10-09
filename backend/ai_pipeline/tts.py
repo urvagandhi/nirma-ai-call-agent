@@ -17,6 +17,7 @@ Dependencies:
 """
 
 import asyncio
+import hashlib
 import logging
 import os
 import time
@@ -106,6 +107,7 @@ class IndicF5TTS(TTSAdapter):
     async def synthesize(self, text: str, language: str = "hi") -> str:
         """
         Synthesizes speech using local model weights and writes output WAV.
+        Serves from cache in 0ms if identical text was previously synthesized.
 
         Args:
             text: Text prompt to synthesize.
@@ -114,8 +116,14 @@ class IndicF5TTS(TTSAdapter):
         Returns:
             str: Public static URL for the generated audio file.
         """
-        filename = f"tts_{uuid.uuid4().hex[:12]}.wav"
+        content_hash = hashlib.sha256(f"{language.lower()}:{text.strip()}".encode("utf-8")).hexdigest()[:16]
+        filename = f"tts_local_{content_hash}.wav"
         output_path = os.path.join(self.cache_dir, filename)
+
+        # Performance Optimization: Zero-latency cache hit for repeated prompts
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            logger.info("Local TTS cache HIT for hash %s (served in 0 ms)", content_hash)
+            return f"{settings.base_url}/static/audio/{filename}"
 
         # Offload blocking computation to threadpool
         await asyncio.to_thread(self._sync_synthesize, text, language, output_path)
@@ -159,6 +167,7 @@ class GoogleTTS(TTSAdapter):
     async def synthesize(self, text: str, language: str = "hi") -> str:
         """
         Synthesizes speech audio using gTTS and saves to local static directory.
+        Serves from cache in 0ms if identical text was previously synthesized.
 
         Args:
             text: Script response text.
@@ -167,8 +176,14 @@ class GoogleTTS(TTSAdapter):
         Returns:
             str: Public URL for the synthesized audio file.
         """
-        filename = f"tts_{uuid.uuid4().hex[:12]}.mp3"
+        content_hash = hashlib.sha256(f"{language.lower()}:{text.strip()}".encode("utf-8")).hexdigest()[:16]
+        filename = f"tts_cloud_{content_hash}.mp3"
         output_path = os.path.join(self.cache_dir, filename)
+
+        # Performance Optimization: Zero-latency cache hit for repeated greetings/notices
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            logger.info("Google TTS cache HIT for hash %s (served in 0 ms)", content_hash)
+            return f"{settings.base_url}/static/audio/{filename}"
 
         logger.debug("Generating cloud fallback speech audio via gTTS: %s", output_path)
         await asyncio.to_thread(self._sync_generate, text, language, output_path)
