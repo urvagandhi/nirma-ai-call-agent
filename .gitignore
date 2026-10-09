@@ -1,0 +1,86 @@
+# ==========================================
+# Python & Bytecode
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ==========================================
+# Virtual Environments
+# ==========================================
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ==========================================
+# Testing & Code Quality
+# ==========================================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+
+# ==========================================
+# Telephony, Media & Audio Cache
+# ==========================================
+*.wav
+*.mp3
+*.ogg
+*.flac
+audio_cache/
+temp_audio/
+recordings/
+
+# ==========================================
+# Secrets, Certificates & Environment
+# ==========================================
+.env
+.env.*
+!.env.example
+certs/
+*.pem
+*.key
+*.crt
+
+# ==========================================
+# Database & State Stores
+# ==========================================
+*.sqlite3
+*.db
+pgdata/
+redis_data/
+minio_data/
+
+# ==========================================
+# IDE & System Files
+# ==========================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
