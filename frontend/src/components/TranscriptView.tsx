@@ -5,18 +5,12 @@ import {
   Pause, 
   RotateCcw, 
   Volume2, 
-  Cpu, 
-  Clock, 
-  CheckCircle2, 
-  AlertCircle, 
   User, 
-  Bot,
-  Filter,
-  Download
+  Bot
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,7 +23,7 @@ import {
   TableRow 
 } from '@/components/ui/table';
 import { 
-  CallTask, 
+  type CallTask,
   CallLog, 
   INITIAL_TASKS, 
   INITIAL_TRANSCRIPTS 
@@ -40,7 +34,6 @@ export const TranscriptView: React.FC = () => {
   const [selectedTaskId, setSelectedTaskId] = useState<number>(501);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
-  const [audioProgress, setAudioProgress] = useState<number>(35);
 
   const filteredTasks = INITIAL_TASKS.filter(task => 
     task.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||

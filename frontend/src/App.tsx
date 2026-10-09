@@ -1,9 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Header } from '@/components/Header';
-import { DashboardView } from '@/components/DashboardView';
-import { LiveTelemetryView } from '@/components/LiveTelemetryView';
-import { CampaignLauncherView } from '@/components/CampaignLauncherView';
-import { TranscriptView } from '@/components/TranscriptView';
 import { Toaster } from '@/components/ui/sonner';
 import { 
   CallCampaign, 
@@ -11,6 +7,20 @@ import {
   INITIAL_CAMPAIGNS, 
   INITIAL_TASKS 
 } from '@/services/api';
+
+const DashboardView = lazy(() => import('@/components/DashboardView').then(m => ({ default: m.DashboardView })));
+const LiveTelemetryView = lazy(() => import('@/components/LiveTelemetryView').then(m => ({ default: m.LiveTelemetryView })));
+const CampaignLauncherView = lazy(() => import('@/components/CampaignLauncherView').then(m => ({ default: m.CampaignLauncherView })));
+const TranscriptView = lazy(() => import('@/components/TranscriptView').then(m => ({ default: m.TranscriptView })));
+
+const ViewFallback = () => (
+  <div className="flex items-center justify-center min-h-[480px]">
+    <div className="flex flex-col items-center space-y-3 p-6 glass-panel rounded-lg border border-hairline">
+      <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      <span className="text-xs font-mono text-mute tracking-wider uppercase">Loading View Telemetry...</span>
+    </div>
+  </div>
+);
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'telemetry' | 'campaigns' | 'transcripts'>('dashboard');
@@ -94,31 +104,33 @@ export function App() {
 
       {/* Main Content Viewport */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {activeTab === 'dashboard' && (
-          <DashboardView 
-            campaigns={campaigns}
-            onLaunchNewCampaign={() => setActiveTab('campaigns')}
-            onViewTranscripts={() => setActiveTab('transcripts')}
-          />
-        )}
+        <Suspense fallback={<ViewFallback />}>
+          {activeTab === 'dashboard' && (
+            <DashboardView 
+              campaigns={campaigns}
+              onLaunchNewCampaign={() => setActiveTab('campaigns')}
+              onViewTranscripts={() => setActiveTab('transcripts')}
+            />
+          )}
 
-        {activeTab === 'telemetry' && (
-          <LiveTelemetryView 
-            tasks={tasks}
-            onSelectTask={() => {}}
-          />
-        )}
+          {activeTab === 'telemetry' && (
+            <LiveTelemetryView 
+              tasks={tasks}
+              onSelectTask={() => {}}
+            />
+          )}
 
-        {activeTab === 'campaigns' && (
-          <CampaignLauncherView 
-            onCampaignCreated={handleCampaignCreated}
-            onNavigateToTelemetry={() => setActiveTab('telemetry')}
-          />
-        )}
+          {activeTab === 'campaigns' && (
+            <CampaignLauncherView 
+              onCampaignCreated={handleCampaignCreated}
+              onNavigateToTelemetry={() => setActiveTab('telemetry')}
+            />
+          )}
 
-        {activeTab === 'transcripts' && (
-          <TranscriptView />
-        )}
+          {activeTab === 'transcripts' && (
+            <TranscriptView />
+          )}
+        </Suspense>
       </main>
 
       {/* Footer */}

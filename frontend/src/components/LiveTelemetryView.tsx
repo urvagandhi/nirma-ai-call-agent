@@ -1,15 +1,9 @@
 import React, { useState } from 'react';
 import { 
-  Radio, 
   PhoneOff, 
   PhoneForwarded, 
   Volume2, 
-  Mic, 
-  Cpu, 
-  Sparkles, 
-  RotateCcw,
-  CheckCircle,
-  AlertCircle
+  Cpu 
 } from 'lucide-react';
 import { toast } from 'sonner';
 

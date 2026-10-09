@@ -1,15 +1,8 @@
 import React, { useState } from 'react';
 import { 
   PhoneCall, 
-  Filter, 
-  FileText, 
   Users, 
-  Clock, 
   ShieldAlert, 
-  Send, 
-  Check, 
-  ChevronRight,
-  Sliders,
   Volume2
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -34,7 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { CallScript, CallCampaign, INITIAL_SCRIPTS } from '@/services/api';
+import { CallCampaign, INITIAL_SCRIPTS } from '@/services/api';
 
 interface CampaignLauncherViewProps {
   onCampaignCreated: (newCampaign: CallCampaign) => void;
@@ -105,6 +98,9 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
         loading: `Queueing ${estimatedStudents} PSTN calls with carrier...`,
         success: () => {
           onCampaignCreated(newCampaign);
+          if (onNavigateToTelemetry) {
+            setTimeout(onNavigateToTelemetry, 700);
+          }
           return `Campaign "${campaignName}" launched! Calls in progress.`;
         },
         error: 'Failed to dispatch carrier calls'
@@ -236,6 +232,31 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
                   <span>50% (Critical)</span>
                   <span>75% (University Mandate)</span>
                   <span>90% (Distinction)</span>
+                </div>
+              </div>
+
+              {/* Fee Clearance Filter */}
+              <div className="space-y-1.5 pt-2">
+                <label className="text-xs text-body font-medium">Fee Clearance Status</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'all', label: 'All Records' },
+                    { id: 'pending', label: 'Pending Dues' },
+                    { id: 'cleared', label: 'Fee Cleared' }
+                  ].map((fee) => (
+                    <button
+                      key={fee.id}
+                      type="button"
+                      onClick={() => setFeeStatus(fee.id)}
+                      className={`h-8 rounded text-xs font-mono border transition-all ${
+                        feeStatus === fee.id
+                          ? 'bg-primary text-white border-primary shadow-sm'
+                          : 'bg-canvas-elevated text-body border-hairline hover:text-ink hover:border-hairline-strong'
+                      }`}
+                    >
+                      {fee.label}
+                    </button>
+                  ))}
                 </div>
               </div>
             </CardContent>

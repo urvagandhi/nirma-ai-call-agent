@@ -5,10 +5,7 @@ import {
   Clock, 
   Zap, 
   TrendingUp, 
-  CheckCircle2, 
-  AlertTriangle,
-  Play,
-  RotateCcw
+  CheckCircle2
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -19,9 +16,7 @@ import {
   Tooltip, 
   PieChart, 
   Pie, 
-  Cell, 
-  BarChart, 
-  Bar 
+  Cell
 } from 'recharts';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -68,7 +63,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 }) => {
   const totalCalls = campaigns.reduce((acc, c) => acc + c.total_tasks, 0);
   const completedCalls = campaigns.reduce((acc, c) => acc + c.completed_tasks, 0);
-  const failedCalls = campaigns.reduce((acc, c) => acc + c.failed_tasks, 0);
   const connectionRate = totalCalls > 0 ? ((completedCalls / totalCalls) * 100).toFixed(1) : '94.2';
 
   return (
