@@ -17,7 +17,7 @@ interface LiveTelemetryViewProps {
   onSelectTask: (task: CallTask) => void;
 }
 
-export const LiveTelemetryView: React.FC<LiveTelemetryViewProps> = ({
+export const LiveTelemetryView: React.FC<LiveTelemetryViewProps> = React.memo(({
   tasks,
   onSelectTask,
 }) => {
@@ -26,20 +26,20 @@ export const LiveTelemetryView: React.FC<LiveTelemetryViewProps> = ({
   const selectedTask = tasks.find(t => t.id === selectedTaskId) || tasks[0];
   const activeLog: CallLog | undefined = INITIAL_TRANSCRIPTS[selectedTaskId];
 
-  const handleHangup = (task: CallTask) => {
-    toast.error(`Call terminated`, {
-      description: `Carrier UUID ${task.plivo_uuid} disconnected by operator.`,
+  const handleHangup = React.useCallback((task: CallTask) => {
+    toast.error(`Call Terminated`, {
+      description: `Carrier UUID ${task.plivo_uuid || 'PSTN'} disconnected by operator for ${task.student_name}.`,
     });
-  };
+  }, []);
 
-  const handleTransfer = (task: CallTask) => {
-    toast.info(`Transferring to Student Affairs Desk`, {
-      description: `PSTN bridge initiated for student ${task.student_name}.`,
+  const handleTransfer = React.useCallback((task: CallTask) => {
+    toast.info(`Transfer Initiated`, {
+      description: `PSTN bridge connected to Student Affairs Desk for ${task.student_name} (${task.student_phone}).`,
     });
-  };
+  }, []);
 
   return (
-    <div className="space-y-6">
+    <div id="panel-telemetry" role="tabpanel" aria-labelledby="tab-telemetry" className="space-y-6">
       {/* View Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-hairline pb-5">
         <div>
@@ -74,7 +74,7 @@ export const LiveTelemetryView: React.FC<LiveTelemetryViewProps> = ({
             <span className="text-mute">SELECT TO INSPECT</span>
           </div>
 
-          <div className="space-y-2.5">
+          <div className="space-y-2.5" role="list" aria-label="Dispatched carrier calls">
             {tasks.map((task) => {
               const isSelected = task.id === selectedTaskId;
               const isLive = task.status === 'in_progress';
@@ -83,11 +83,22 @@ export const LiveTelemetryView: React.FC<LiveTelemetryViewProps> = ({
               return (
                 <div
                   key={task.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={isSelected}
+                  aria-label={`Call with ${task.student_name}, roll number ${task.student_roll}, status ${task.status}`}
                   onClick={() => {
                     setSelectedTaskId(task.id);
                     onSelectTask(task);
                   }}
-                  className={`p-3.5 rounded-md border cursor-pointer transition-all ${
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedTaskId(task.id);
+                      onSelectTask(task);
+                    }
+                  }}
+                  className={`p-3.5 rounded-md border cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                     isSelected
                       ? 'bg-canvas-elevated border-hairline-terracotta terracotta-glow'
                       : 'bg-canvas-soft border-hairline hover:bg-canvas-elevated/70'
@@ -119,10 +130,10 @@ export const LiveTelemetryView: React.FC<LiveTelemetryViewProps> = ({
                   {isLive && (
                     <div className="mt-2.5 pt-2 border-t border-hairline-subtle flex items-center justify-between text-[11px]">
                       <div className="flex items-center space-x-1.5 text-telemetry-cyan font-mono truncate max-w-[280px]">
-                        <Volume2 className="w-3.5 h-3.5 inline shrink-0" />
+                        <Volume2 className="w-3.5 h-3.5 inline shrink-0" aria-hidden="true" />
                         <span className="truncate">{task.current_turn}</span>
                       </div>
-                      <div className="flex items-center space-x-0.5">
+                      <div className="flex items-center space-x-0.5" aria-hidden="true">
                         <span className="w-1 h-3 bg-live-pulse rounded-full animate-soundwave" style={{ animationDelay: '0.1s' }} />
                         <span className="w-1 h-4 bg-live-pulse rounded-full animate-soundwave" style={{ animationDelay: '0.3s' }} />
                         <span className="w-1 h-2 bg-live-pulse rounded-full animate-soundwave" style={{ animationDelay: '0.2s' }} />
@@ -133,7 +144,7 @@ export const LiveTelemetryView: React.FC<LiveTelemetryViewProps> = ({
                   {isRinging && (
                     <div className="mt-2.5 pt-2 border-t border-hairline-subtle flex items-center justify-between text-[11px] text-telemetry-amber font-mono">
                       <span>Dialing recipient via Plivo carrier...</span>
-                      <span className="animate-pulse">● ● ●</span>
+                      <span className="animate-pulse" aria-hidden="true">● ● ●</span>
                     </div>
                   )}
                 </div>
@@ -163,7 +174,7 @@ export const LiveTelemetryView: React.FC<LiveTelemetryViewProps> = ({
                     </Badge>
                   </div>
                   <CardDescription className="text-xs text-body mt-1 font-mono">
-                    Phone: <span className="text-ink">{selectedTask.student_phone}</span> • Carrier UUID: <span className="text-mute">{selectedTask.plivo_uuid || 'N/A'}</span>
+                    Phone: <span className="text-ink tabular-nums">{selectedTask.student_phone}</span> • Carrier UUID: <span className="text-mute tabular-nums">{selectedTask.plivo_uuid || 'N/A'}</span>
                   </CardDescription>
                 </div>
 
@@ -173,8 +184,9 @@ export const LiveTelemetryView: React.FC<LiveTelemetryViewProps> = ({
                     size="sm" 
                     onClick={() => handleTransfer(selectedTask)}
                     className="text-xs h-7 border-hairline"
+                    aria-label={`Transfer call with ${selectedTask.student_name} to Student Affairs Desk`}
                   >
-                    <PhoneForwarded className="w-3 h-3 mr-1 text-telemetry-cyan" />
+                    <PhoneForwarded className="w-3 h-3 mr-1 text-telemetry-cyan" aria-hidden="true" />
                     Transfer
                   </Button>
                   <Button 
@@ -182,8 +194,9 @@ export const LiveTelemetryView: React.FC<LiveTelemetryViewProps> = ({
                     size="sm" 
                     onClick={() => handleHangup(selectedTask)}
                     className="text-xs h-7"
+                    aria-label={`Hangup call with ${selectedTask.student_name}`}
                   >
-                    <PhoneOff className="w-3 h-3 mr-1" />
+                    <PhoneOff className="w-3 h-3 mr-1" aria-hidden="true" />
                     Hangup
                   </Button>
                 </div>
@@ -192,7 +205,13 @@ export const LiveTelemetryView: React.FC<LiveTelemetryViewProps> = ({
 
             {/* Conversational Stream */}
             <CardContent className="p-5 flex-1 flex flex-col justify-between space-y-4">
-              <div className="space-y-3.5 max-h-[380px] overflow-y-auto pr-1">
+              <div 
+                className="space-y-3.5 max-h-[380px] overflow-y-auto pr-1"
+                role="log"
+                aria-live="polite"
+                aria-relevant="additions text"
+                aria-label="Live Call Conversational Stream"
+              >
                 {activeLog?.transcript.map((turn, index) => {
                   const isAssistant = turn.role === 'assistant';
                   return (
@@ -203,9 +222,9 @@ export const LiveTelemetryView: React.FC<LiveTelemetryViewProps> = ({
                       <div className="flex items-center space-x-1.5 mb-1 text-[11px] font-mono text-mute">
                         <span>{isAssistant ? 'AI Assistant (Nirma Finance)' : 'Student / Parent'}</span>
                         <span>•</span>
-                        <span>{turn.timestamp}</span>
+                        <span className="tabular-nums">{turn.timestamp}</span>
                         {turn.latency_ms && (
-                          <span className="text-live-pulse font-semibold">
+                          <span className="text-live-pulse font-semibold tabular-nums">
                             [{turn.latency_ms} ms]
                           </span>
                         )}
@@ -225,8 +244,8 @@ export const LiveTelemetryView: React.FC<LiveTelemetryViewProps> = ({
                 })}
 
                 {selectedTask.status === 'in_progress' && (
-                  <div className="flex items-center space-x-2 text-xs text-telemetry-cyan font-mono pt-2">
-                    <span className="w-2 h-2 rounded-full bg-telemetry-cyan animate-ping" />
+                  <div className="flex items-center space-x-2 text-xs text-telemetry-cyan font-mono pt-2" role="status">
+                    <span className="w-2 h-2 rounded-full bg-telemetry-cyan animate-ping" aria-hidden="true" />
                     <span>Transcribing live speech stream via IndicConformer (0.6B)...</span>
                   </div>
                 )}
@@ -236,7 +255,7 @@ export const LiveTelemetryView: React.FC<LiveTelemetryViewProps> = ({
               <div className="pt-4 border-t border-hairline bg-canvas-subtle p-3 rounded-md border border-hairline">
                 <div className="flex items-center justify-between text-xs font-mono">
                   <div className="flex items-center space-x-2 text-body">
-                    <Cpu className="w-3.5 h-3.5 text-telemetry-cyan" />
+                    <Cpu className="w-3.5 h-3.5 text-telemetry-cyan" aria-hidden="true" />
                     <span>Last Turn Turnaround:</span>
                     <strong className="text-ink tabular-nums">
                       {selectedTask.turn_latency_ms || 1840} ms
@@ -247,9 +266,9 @@ export const LiveTelemetryView: React.FC<LiveTelemetryViewProps> = ({
                   </Badge>
                 </div>
                 <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-hairline text-[10px] font-mono text-mute">
-                  <div>ASR: <span className="text-ink">~450ms</span> (IndicConformer)</div>
-                  <div>LLM: <span className="text-ink">~890ms</span> (Qwen-14B)</div>
-                  <div>TTS: <span className="text-ink">~500ms</span> (IndicF5)</div>
+                  <div>ASR: <span className="text-ink tabular-nums">~450ms</span> (IndicConformer)</div>
+                  <div>LLM: <span className="text-ink tabular-nums">~890ms</span> (Qwen-14B)</div>
+                  <div>TTS: <span className="text-ink tabular-nums">~500ms</span> (IndicF5)</div>
                 </div>
               </div>
             </CardContent>
@@ -258,4 +277,6 @@ export const LiveTelemetryView: React.FC<LiveTelemetryViewProps> = ({
       </div>
     </div>
   );
-};
+});
+
+LiveTelemetryView.displayName = 'LiveTelemetryView';

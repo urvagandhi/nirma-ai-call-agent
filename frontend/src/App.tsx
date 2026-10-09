@@ -46,7 +46,7 @@ export function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleCampaignCreated = (newCampaign: CallCampaign) => {
+  const handleCampaignCreated = React.useCallback((newCampaign: CallCampaign) => {
     setCampaigns(prev => [newCampaign, ...prev]);
 
     // Generate mock tasks for newly launched campaign
@@ -86,9 +86,16 @@ export function App() {
 
     setTasks(prev => [...newTasks, ...prev]);
     setActiveTab('telemetry');
-  };
+  }, []);
 
-  const activeCallCount = tasks.filter(t => t.status === 'in_progress' || t.status === 'ringing').length;
+  const handleLaunchNewCampaign = React.useCallback(() => setActiveTab('campaigns'), []);
+  const handleViewTranscripts = React.useCallback(() => setActiveTab('transcripts'), []);
+  const handleNavigateToTelemetry = React.useCallback(() => setActiveTab('telemetry'), []);
+  const handleTabChange = React.useCallback((tab: string) => setActiveTab(tab as any), []);
+
+  const activeCallCount = React.useMemo(() => {
+    return tasks.filter(t => t.status === 'in_progress' || t.status === 'ringing').length;
+  }, [tasks]);
 
   return (
     <div className="min-h-screen bg-canvas text-ink flex flex-col font-sans antialiased selection:bg-primary selection:text-white">
@@ -98,18 +105,18 @@ export function App() {
       {/* Navigation Masthead */}
       <Header 
         activeTab={activeTab} 
-        setActiveTab={(tab) => setActiveTab(tab as any)} 
+        setActiveTab={handleTabChange} 
         activeCallCount={activeCallCount}
       />
 
       {/* Main Content Viewport */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main id="main-content" tabIndex={-1} className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 focus:outline-none">
         <Suspense fallback={<ViewFallback />}>
           {activeTab === 'dashboard' && (
             <DashboardView 
               campaigns={campaigns}
-              onLaunchNewCampaign={() => setActiveTab('campaigns')}
-              onViewTranscripts={() => setActiveTab('transcripts')}
+              onLaunchNewCampaign={handleLaunchNewCampaign}
+              onViewTranscripts={handleViewTranscripts}
             />
           )}
 
@@ -123,7 +130,7 @@ export function App() {
           {activeTab === 'campaigns' && (
             <CampaignLauncherView 
               onCampaignCreated={handleCampaignCreated}
-              onNavigateToTelemetry={() => setActiveTab('telemetry')}
+              onNavigateToTelemetry={handleNavigateToTelemetry}
             />
           )}
 

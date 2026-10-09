@@ -6,14 +6,21 @@
     background-color: #080C15;
     color: #F1F5F9;
     font-family: 'Inter', system-ui, -apple-system, 'Noto Sans Gujarati', 'Noto Sans Devanagari', sans-serif;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings: "rlig" 1, "calt" 1, "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
 
   /* Strict Tabular Numeral Invariant from DESIGN.md */
   .tabular-nums {
     font-variant-numeric: tabular-nums;
+  }
+
+  /* Accessible focus indicators conforming to WCAG 2.2 AA (Criterion 2.4.7) */
+  :focus-visible {
+    outline: 2px solid #E06D3B;
+    outline-offset: 2px;
   }
 }
 
@@ -56,4 +63,16 @@
 
 .terracotta-glow {
   box-shadow: 0 0 20px -3px rgba(224, 109, 59, 0.3);
+}
+
+/* WCAG 2.2 AA Reduced Motion Safe Harbor */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

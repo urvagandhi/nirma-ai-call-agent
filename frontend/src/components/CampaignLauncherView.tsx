@@ -44,7 +44,7 @@ const DEPARTMENTS = [
   'Institute of Management'
 ];
 
-export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
+export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = React.memo(({
   onCampaignCreated,
   onNavigateToTelemetry,
 }) => {
@@ -60,17 +60,19 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
   const selectedScript = INITIAL_SCRIPTS.find(s => s.id === selectedScriptId) || INITIAL_SCRIPTS[0];
 
   // Dynamic estimated recipient count based on filters
-  const estimatedStudents = selectedDept === 'All Departments' 
-    ? 1240 
-    : selectedSemesters.length * 64;
+  const estimatedStudents = React.useMemo(() => {
+    return selectedDept === 'All Departments' 
+      ? 1240 
+      : selectedSemesters.length * 64;
+  }, [selectedDept, selectedSemesters.length]);
 
-  const toggleSemester = (sem: number) => {
+  const toggleSemester = React.useCallback((sem: number) => {
     setSelectedSemesters(prev => 
       prev.includes(sem) ? prev.filter(s => s !== sem) : [...prev, sem].sort()
     );
-  };
+  }, []);
 
-  const handleLaunchCampaign = () => {
+  const handleLaunchCampaign = React.useCallback(() => {
     setIsConfirmOpen(false);
 
     const newCampaign: CallCampaign = {
@@ -95,7 +97,7 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
     toast.promise(
       new Promise((resolve) => setTimeout(resolve, 1200)),
       {
-        loading: `Queueing ${estimatedStudents} PSTN calls with carrier...`,
+        loading: `Queueing ${estimatedStudents} PSTN calls via Plivo carrier...`,
         success: () => {
           onCampaignCreated(newCampaign);
           if (onNavigateToTelemetry) {
@@ -106,10 +108,10 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
         error: 'Failed to dispatch carrier calls'
       }
     );
-  };
+  }, [campaignName, selectedScriptId, selectedDept, selectedSemesters, attendanceThreshold, feeStatus, estimatedStudents, onCampaignCreated, onNavigateToTelemetry]);
 
   return (
-    <div className="space-y-6">
+    <div id="panel-campaigns" role="tabpanel" aria-labelledby="tab-campaigns" className="space-y-6">
       {/* View Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-hairline pb-5">
         <div>
@@ -153,8 +155,9 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
             </CardHeader>
             <CardContent className="p-5 pt-0 space-y-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-body">Campaign Title</label>
+                <label htmlFor="campaign-title-input" className="text-xs font-medium text-body">Campaign Title</label>
                 <Input 
+                  id="campaign-title-input"
                   value={campaignName}
                   onChange={(e) => setCampaignName(e.target.value)}
                   placeholder="e.g. BTech Semester 5 Tuition Fee Notice"
@@ -168,7 +171,7 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
           <Card className="bg-canvas-soft border-hairline">
             <CardHeader className="p-5 pb-3">
               <div className="flex items-center space-x-2">
-                <span className="w-5 h-5 rounded-full bg-primary/20 text-primary font-mono text-xs flex items-center justify-center font-bold">2</span>
+                <span className="w-5 h-5 rounded-full bg-primary/20 text-primary font-mono text-xs flex items-center justify-center font-bold" aria-hidden="true">2</span>
                 <CardTitle className="text-sm font-semibold text-ink">Target Audience & Filters</CardTitle>
               </div>
               <CardDescription className="text-xs text-body">
@@ -178,9 +181,9 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
             <CardContent className="p-5 pt-0 space-y-4">
               {/* Department */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-body">Academic Department</label>
+                <label id="dept-select-label" className="text-xs font-medium text-body">Academic Department</label>
                 <Select value={selectedDept} onValueChange={setSelectedDept}>
-                  <SelectTrigger className="bg-canvas-elevated">
+                  <SelectTrigger aria-labelledby="dept-select-label" className="bg-canvas-elevated">
                     <SelectValue placeholder="Select Department" />
                   </SelectTrigger>
                   <SelectContent>
@@ -193,16 +196,17 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
 
               {/* Semester Multi-Select Chips */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-body">Enrolled Semesters</label>
-                <div className="flex flex-wrap gap-2">
+                <label id="sem-group-label" className="text-xs font-medium text-body">Enrolled Semesters</label>
+                <div className="flex flex-wrap gap-2" role="group" aria-labelledby="sem-group-label">
                   {[1, 2, 3, 4, 5, 6, 7, 8].map((sem) => {
                     const isSelected = selectedSemesters.includes(sem);
                     return (
                       <button
                         key={sem}
                         type="button"
+                        aria-pressed={isSelected}
                         onClick={() => toggleSemester(sem)}
-                        className={`px-3 py-1 rounded text-xs font-mono font-medium border transition-colors ${
+                        className={`px-3 py-1 rounded text-xs font-mono font-medium border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                           isSelected
                             ? 'bg-primary text-white border-primary shadow-sm'
                             : 'bg-canvas-elevated text-body border-hairline hover:text-ink hover:border-hairline-strong'
@@ -218,17 +222,18 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
               {/* Attendance Threshold Slider */}
               <div className="space-y-2 pt-1">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-body font-medium">Attendance Filter Criteria</span>
+                  <label id="attendance-slider-label" className="text-body font-medium">Attendance Filter Criteria</label>
                   <span className="font-mono text-ink tabular-nums font-semibold">&lt; {attendanceThreshold}%</span>
                 </div>
                 <Slider 
+                  aria-labelledby="attendance-slider-label"
                   value={[attendanceThreshold]} 
                   onValueChange={(vals) => setAttendanceThreshold(vals[0])}
                   min={50} 
                   max={90} 
                   step={5} 
                 />
-                <div className="flex justify-between text-[10px] text-mute font-mono">
+                <div className="flex justify-between text-[10px] text-mute font-mono" aria-hidden="true">
                   <span>50% (Critical)</span>
                   <span>75% (University Mandate)</span>
                   <span>90% (Distinction)</span>
@@ -237,8 +242,8 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
 
               {/* Fee Clearance Filter */}
               <div className="space-y-1.5 pt-2">
-                <label className="text-xs text-body font-medium">Fee Clearance Status</label>
-                <div className="grid grid-cols-3 gap-2">
+                <label id="fee-status-label" className="text-xs text-body font-medium">Fee Clearance Status</label>
+                <div className="grid grid-cols-3 gap-2" role="group" aria-labelledby="fee-status-label">
                   {[
                     { id: 'all', label: 'All Records' },
                     { id: 'pending', label: 'Pending Dues' },
@@ -247,8 +252,9 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
                     <button
                       key={fee.id}
                       type="button"
+                      aria-pressed={feeStatus === fee.id}
                       onClick={() => setFeeStatus(fee.id)}
-                      className={`h-8 rounded text-xs font-mono border transition-all ${
+                      className={`h-8 rounded text-xs font-mono border transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                         feeStatus === fee.id
                           ? 'bg-primary text-white border-primary shadow-sm'
                           : 'bg-canvas-elevated text-body border-hairline hover:text-ink hover:border-hairline-strong'
@@ -266,7 +272,7 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
           <Card className="bg-canvas-soft border-hairline">
             <CardHeader className="p-5 pb-3">
               <div className="flex items-center space-x-2">
-                <span className="w-5 h-5 rounded-full bg-primary/20 text-primary font-mono text-xs flex items-center justify-center font-bold">3</span>
+                <span className="w-5 h-5 rounded-full bg-primary/20 text-primary font-mono text-xs flex items-center justify-center font-bold" aria-hidden="true">3</span>
                 <CardTitle className="text-sm font-semibold text-ink">Call Script & Telephony Template</CardTitle>
               </div>
               <CardDescription className="text-xs text-body">
@@ -275,12 +281,12 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
             </CardHeader>
             <CardContent className="p-5 pt-0 space-y-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-body">Verified Call Script</label>
+                <label id="script-select-label" className="text-xs font-medium text-body">Verified Call Script</label>
                 <Select 
                   value={selectedScriptId.toString()} 
                   onValueChange={(val) => setSelectedScriptId(parseInt(val, 10))}
                 >
-                  <SelectTrigger className="bg-canvas-elevated">
+                  <SelectTrigger aria-labelledby="script-select-label" className="bg-canvas-elevated">
                     <SelectValue placeholder="Select Call Script" />
                   </SelectTrigger>
                   <SelectContent>
@@ -299,7 +305,7 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
           <Card className="bg-canvas-soft border-hairline">
             <CardHeader className="p-5 pb-3">
               <div className="flex items-center space-x-2">
-                <span className="w-5 h-5 rounded-full bg-primary/20 text-primary font-mono text-xs flex items-center justify-center font-bold">4</span>
+                <span className="w-5 h-5 rounded-full bg-primary/20 text-primary font-mono text-xs flex items-center justify-center font-bold" aria-hidden="true">4</span>
                 <CardTitle className="text-sm font-semibold text-ink">Carrier Rate Throttling</CardTitle>
               </div>
               <CardDescription className="text-xs text-body">
@@ -309,10 +315,11 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
             <CardContent className="p-5 pt-0 space-y-3">
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-body font-medium">Max Calls Dispatched Per Minute</span>
+                  <label id="throttle-slider-label" className="text-body font-medium">Max Calls Dispatched Per Minute</label>
                   <span className="font-mono text-live-pulse tabular-nums font-semibold">{throttleRate} calls/min</span>
                 </div>
                 <Slider 
+                  aria-labelledby="throttle-slider-label"
                   value={[throttleRate]} 
                   onValueChange={(vals) => setThrottleRate(vals[0])}
                   min={5} 
@@ -466,4 +473,6 @@ export const CampaignLauncherView: React.FC<CampaignLauncherViewProps> = ({
       </Dialog>
     </div>
   );
-};
+});
+
+CampaignLauncherView.displayName = 'CampaignLauncherView';

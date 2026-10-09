@@ -56,17 +56,24 @@ const LATENCY_BREAKDOWN = [
   { stage: 'Network & PSTN Buffer', ms: 280, budget: 400, color: '#A855F7' },
 ];
 
-export const DashboardView: React.FC<DashboardViewProps> = ({
+export const DashboardView: React.FC<DashboardViewProps> = React.memo(({
   campaigns,
   onLaunchNewCampaign,
   onViewTranscripts,
 }) => {
-  const totalCalls = campaigns.reduce((acc, c) => acc + c.total_tasks, 0);
-  const completedCalls = campaigns.reduce((acc, c) => acc + c.completed_tasks, 0);
-  const connectionRate = totalCalls > 0 ? ((completedCalls / totalCalls) * 100).toFixed(1) : '94.2';
+  const { totalCalls, completedCalls, connectionRate } = React.useMemo(() => {
+    const total = campaigns.reduce((acc, c) => acc + c.total_tasks, 0);
+    const completed = campaigns.reduce((acc, c) => acc + c.completed_tasks, 0);
+    const rate = total > 0 ? ((completed / total) * 100).toFixed(1) : '94.2';
+    return {
+      totalCalls: total,
+      completedCalls: completed,
+      connectionRate: rate,
+    };
+  }, [campaigns]);
 
   return (
-    <div className="space-y-6">
+    <div id="panel-dashboard" role="tabpanel" aria-labelledby="tab-dashboard" className="space-y-6">
       {/* Top Banner & Quick Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-hairline pb-5">
         <div>
@@ -356,12 +363,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </CardHeader>
           <CardContent className="p-0">
             <Table>
+              <caption className="sr-only">Recent Outbound Automated Campaigns</caption>
               <TableHeader>
                 <TableRow>
-                  <TableHead>CAMPAIGN NAME</TableHead>
-                  <TableHead>TARGET FILTER</TableHead>
-                  <TableHead>STATUS</TableHead>
-                  <TableHead className="text-right">PROGRESS</TableHead>
+                  <TableHead scope="col">CAMPAIGN NAME</TableHead>
+                  <TableHead scope="col">TARGET FILTER</TableHead>
+                  <TableHead scope="col">STATUS</TableHead>
+                  <TableHead scope="col" className="text-right">PROGRESS</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -403,4 +411,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
     </div>
   );
-};
+});
+
+DashboardView.displayName = 'DashboardView';
