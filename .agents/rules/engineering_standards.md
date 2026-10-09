@@ -35,4 +35,11 @@ description: Enterprise engineering standards, strict commenting, performance op
 - **Detailed Multi-Line Context**: Commit bodies must document the *why* (context & problem statement), list component-level changes, and specify quality checks passed.
 - **History Hygiene**: Avoid trivial, empty, or duplicate commits; amend or rebase cleanly.
 
+## 6. Frontend Architecture & Shadcn UI Directives
+- **Zero Custom Primitive Components**: Never implement hand-crafted primitive UI components. Directly use Shadcn UI components built on Radix UI primitives (`@/components/ui/*`).
+- **DESIGN.md Fidelity**: Canvas `#080C15`, Primary Terracotta `#E06D3B`, Live Emerald `#10B981`, GPU Cyan `#06B6D4`, TRAI Amber `#F59E0B`, Hairline `rgba(255, 255, 255, 0.08)`.
+- **Tabular Numbers & Density**: Strict `tabular-nums` for all metrics and timestamps; standard `32px` control height on 4px grid.
+- **Toasts**: Always use `sonner` via `<Toaster />` mounted once at root.
+
+
 

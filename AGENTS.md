@@ -259,6 +259,32 @@ Refs: #<issue_number>
 
 ### 8.2 Allowed Types & Scopes
 - **Types**: `feat` (new feature), `fix` (bug fix), `refactor` (code refactoring without feature change), `perf` (performance optimization), `chore` (scaffolding, maintenance, dependencies), `docs` (documentation only), `test` (test suite updates).
-- **Scopes**: `architecture`, `telephony`, `ai-pipeline`, `stt`, `llm`, `tts`, `database`, `scheduler`, `api`, `websocket`, `security`, `deploy`.
+- **Scopes**: `architecture`, `telephony`, `ai-pipeline`, `stt`, `llm`, `tts`, `database`, `scheduler`, `api`, `websocket`, `security`, `deploy`, `ui`, `frontend`.
+
+---
+
+## 9. Frontend Architecture, Design System & Shadcn UI Directives
+
+### 9.1 Shadcn UI Invariant (Zero In-House Component Reinvention)
+- **Zero Hand-Crafted Primitive Components**: Never build in-house primitive replacements for components that exist in Shadcn UI (button, dialog, dropdown-menu, input, tabs, select, badge, avatar, card, table, tooltip, sheet, sonner toast).
+- **Official Shadcn Component Library**: Directly install and utilize standard Shadcn UI components built on Radix UI primitives with Tailwind CSS utilities (`@/components/ui/*`).
+- **Notification Protocol**: Use `sonner` (`<Toaster />` mounted once at root) for all operational toast notifications, carrier dispatch promises, and telephony alerts as mandated by the `ask-sonner` skill.
+
+### 9.2 DESIGN.md Tokens & Visual Fidelity
+- **Palette Compliance**: All surfaces, text, and borders must strictly derive from `DESIGN.md`:
+  - Canvas Root: `#080C15`
+  - Canvas Subtle: `#0A0E1A`
+  - Canvas Soft: `#0D1322`
+  - Canvas Elevated: `#131B2E`
+  - Primary Brand (Nirma Terracotta): `#E06D3B` (hover `#F08252`, deep `#993416`)
+  - Live Stream Emerald: `#10B981` (waveforms, connected calls)
+  - Supercomputer GPU Cyan: `#06B6D4` (model inference telemetry)
+  - TRAI Regulatory Amber: `#F59E0B` (09:00 - 21:00 IST compliance, ringing states)
+  - Hairline Borders: `rgba(255, 255, 255, 0.08)`
+- **Typography & Tabular Invariant**:
+  - Display & Body: Inter / System UI with Gujarati (`Noto Sans Gujarati`) & Devanagari (`Noto Sans Devanagari`) support.
+  - Telemetry & Numbers: JetBrains Mono / SFMono with mandatory `tabular-nums` for all real-time counters, phone numbers, UUIDs, and latency readouts.
+- **4px Spatial Grid & 32px Control Height**: All buttons, inputs, and select triggers share a standard `32px` height (`control-height`) on the 4px baseline grid.
+
 
 
