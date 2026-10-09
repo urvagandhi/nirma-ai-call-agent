@@ -178,6 +178,9 @@ flowchart TB
    - Celery Beat must strictly gate call dispatches between **09:00:00 and 21:00:00 IST**.
    - Mandatory AI caller disclosure in the opening script.
    - Respect DND (Do Not Disturb) registries.
+5. **Plivo Dispatch Model (Sync Celery Workers vs Async Webhooks):**
+   - Background dialer tasks running in Celery worker processes invoke Plivo carrier APIs synchronously (`place_call_sync`), bypassing redundant `asyncio.run()` event loop instantiation in pre-forked multiprocessing worker pools.
+   - FastAPI endpoints initiate on-demand outbound calls using `await adapter.place_call()`, running blocking network I/O inside `asyncio.to_thread` to preserve non-blocking ASGI event loop throughput.
 
 ---
 

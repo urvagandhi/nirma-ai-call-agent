@@ -17,6 +17,7 @@ description: Enterprise engineering standards, strict commenting, performance op
 
 ## 3. Telephony & Infrastructure Invariants
 - **Plivo Webhook Key**: Always read `RecordUrl` (PascalCase), with defensive fallback to `RecordingUrl`.
+- **Plivo Execution Architecture**: Celery multiprocessing workers must execute Plivo calls synchronously (`place_call_sync`) without spinning up ad-hoc asyncio event loops; FastAPI endpoints use `asyncio.to_thread` via `place_call`.
 - **Database Engine Isolation**:
   - FastAPI webhooks & REST API: `postgresql+asyncpg://` with `AsyncSession`.
   - Celery synchronous workers: `postgresql+psycopg://` with `NullPool` or `async_to_sync` lifecycle wrapper.

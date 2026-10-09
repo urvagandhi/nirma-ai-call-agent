@@ -109,28 +109,38 @@ class BaseTelephonyAdapter(ABC):
 
 ## 2. Telephony & Webhook Implementation Rules (Plivo)
 
-### 2.1 Critical Plivo Webhook Parameters
+### 2.1 Critical Plivo Webhook Parameters & Execution Architecture
 - **Parameter Name Invariant**: In Plivo `<Record>`, the webhook callback receives **`RecordUrl`**, NOT `RecordingUrl` (which is Twilio's parameter). Always check `form.get("RecordUrl")` first, falling back to `form.get("RecordingUrl")` defensively.
-- **Async Execution**: The official `plivo.RestClient` is synchronous. Always execute blocking Plivo calls inside `asyncio.to_thread(client.calls.create, ...)` to prevent blocking FastAPI's event loop.
+- **Dual Execution Model (Sync Celery vs Async FastAPI)**:
+  - **Celery Multiprocessing Workers (`place_call_sync`)**: Celery background tasks execute synchronously in multiprocessing worker processes. In this context, execute Plivo SDK calls directly and synchronously (`adapter.place_call_sync(...)`) to eliminate the overhead, latency penalty, and thread contention of creating one-off `asyncio` event loops (`asyncio.run(...)`) inside worker processes.
+  - **FastAPI Asynchronous Routes (`place_call`)**: The official `plivo.RestClient` is synchronous and performs blocking HTTP calls. Inside FastAPI's asyncio event loop, wrap blocking Plivo calls inside `asyncio.to_thread(client.calls.create, ...)` or call `await adapter.place_call(...)` to prevent blocking the event loop.
 - **XML Generation**: Never construct Plivo XML using raw string concatenation or naive f-strings. Use `xml.etree.ElementTree` or the official `plivo.plivoxml` builder to guarantee valid XML escaping.
 - **Webhook Security**: Validate incoming Plivo requests using cryptographic signature verification (`X-Plivo-Signature-V3` HMAC-SHA256) rather than relying solely on IP whitelisting.
 
 ```python
-# CORRECT: Asynchronous Plivo call dispatch
-import asyncio
-import plivo
+# CORRECT: Dual Plivo Execution Model
 
-def _sync_create_call():
-    return client.calls.create(
-        from_=caller_id,
-        to_=to_number,
+# 1. Inside Synchronous Celery Multiprocessing Worker Task (Direct Sync):
+def place_call_task(task_id: int):
+    # Direct synchronous execution — zero event-loop instantiation overhead
+    result = adapter.place_call_sync(
+        to_number=student.phone,
         answer_url=answer_url,
         hangup_url=hangup_url,
-        answer_method="POST",
-        hangup_method="POST",
+        caller_id=caller_id,
     )
+    return result.status
 
-response = await asyncio.to_thread(_sync_create_call)
+# 2. Inside FastAPI Asynchronous Route / Webhook (Non-blocking Threadpool):
+async def manual_dial_endpoint(request: DialRequest):
+    # Wrapped in threadpool to keep FastAPI's event loop unblocked
+    result = await adapter.place_call(
+        to_number=request.phone,
+        answer_url=answer_url,
+        hangup_url=hangup_url,
+        caller_id=caller_id,
+    )
+    return result
 ```
 
 ---
