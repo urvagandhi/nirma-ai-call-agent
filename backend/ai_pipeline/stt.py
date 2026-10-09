@@ -226,6 +226,7 @@ class SarvamSTT(STTAdapter):
         files = {"file": ("caller_audio.wav", audio_bytes, "audio/wav")}
         data = {
             "model": "saaras:v4",
+            "mode": "transcribe",
             "language_code": self._map_language_code(language),
             "with_diarization": "false",
         }

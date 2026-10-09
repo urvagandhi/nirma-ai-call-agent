@@ -19,6 +19,7 @@ Dependencies:
 import asyncio
 import logging
 from typing import Optional
+import uuid
 
 import plivo
 
@@ -80,6 +81,23 @@ class PlivoAdapter(BaseTelephonyAdapter):
         Returns:
             CallDispatchResult: Carrier UUID and status.
         """
+        # Sandbox / Mock Fallback for Local Development:
+        # If Plivo credentials are not yet configured or placeholder tokens are used,
+        # generate a simulated call dispatch result so local UI flows & testing never fail.
+        if (
+            not self.auth_id
+            or self.auth_id in ("your_plivo_auth_id", "mock", "")
+            or not self.auth_token
+            or self.auth_token in ("your_plivo_auth_token", "mock", "")
+        ):
+            mock_uuid = f"mock_{uuid.uuid4().hex[:12]}"
+            logger.info(
+                "MOCK TELEPHONY SANDBOX: Simulating call dispatch to %s (UUID: %s)",
+                to_number,
+                mock_uuid,
+            )
+            return CallDispatchResult(call_uuid=mock_uuid, status="queued")
+
         client = self._get_client()
         try:
             logger.info("Plivo REST call -> To: %s, AnswerURL: %s", to_number, answer_url)
@@ -154,6 +172,9 @@ class PlivoAdapter(BaseTelephonyAdapter):
 
     def _sync_hangup_call(self, call_uuid: str) -> bool:
         """Synchronous wrapper for hanging up a call."""
+        if call_uuid.startswith("mock_"):
+            logger.info("MOCK TELEPHONY SANDBOX: Terminating simulated call: %s", call_uuid)
+            return True
         client = self._get_client()
         try:
             client.calls.delete(call_uuid=call_uuid)
@@ -168,6 +189,8 @@ class PlivoAdapter(BaseTelephonyAdapter):
 
     def _sync_get_status(self, call_uuid: str) -> str:
         """Synchronous wrapper for querying call status."""
+        if call_uuid.startswith("mock_"):
+            return "in-progress"
         client = self._get_client()
         try:
             call_info = client.calls.get(call_uuid=call_uuid)

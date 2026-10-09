@@ -41,7 +41,7 @@ async_engine: AsyncEngine = create_async_engine(
     max_overflow=10,
     pool_pre_ping=True,
     pool_recycle=1800,  # Recycle connections every 30 minutes
-    connect_args={"statement_cache_size": 100},  # Optimize asyncpg prepared statement caching
+    connect_args={"statement_cache_size": 0},  # Safe for Supabase connection poolers / PgBouncer
 )
 
 async_session_factory = async_sessionmaker(

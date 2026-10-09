@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", "../.env"),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -108,6 +108,14 @@ class Settings(BaseSettings):
         default="redis://redis:6379/1",
         description="Celery result backend URL",
     )
+    upstash_redis_rest_url: Optional[str] = Field(
+        default=None,
+        description="Upstash Redis REST API endpoint URL",
+    )
+    upstash_redis_rest_token: Optional[str] = Field(
+        default=None,
+        description="Upstash Redis REST API token",
+    )
 
     # --------------------------------------------------------------------------
     # Telephony Provider (Plivo)
@@ -115,7 +123,7 @@ class Settings(BaseSettings):
     plivo_auth_id: str = Field(default="", description="Plivo Authentication ID")
     plivo_auth_token: str = Field(default="", description="Plivo Authentication Token")
     plivo_caller_id: str = Field(
-        default="+917900000000",
+        default="+918866241204",
         description="Registered E.164 Caller ID matching carrier credentials",
     )
 
