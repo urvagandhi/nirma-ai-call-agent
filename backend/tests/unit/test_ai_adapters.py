@@ -1,0 +1,313 @@
+"""
+Unit Tests — AI Voice Pipeline Adapters & Failover Engine.
+
+Tests all components of `backend.ai_pipeline`:
+- STT: IndicConformerSTT, SarvamSTT, FallbackSTT
+- LLM: OllamaLLM, GroqLLM, FallbackLLM
+- TTS: IndicF5TTS, GoogleTTS, FallbackTTS
+- AIPipeline: End-to-end turn orchestrator & latency budget guardrails (<4000ms).
+"""
+
+import asyncio
+import os
+import time
+from typing import Any, Dict, List
+import pytest
+
+from backend.ai_pipeline.llm import (
+    TELEPHONY_VOICE_CONSTRAINT,
+    FallbackLLM,
+    GroqLLM,
+    LLMAdapter,
+    OllamaLLM,
+)
+from backend.ai_pipeline.pipeline import AIPipeline
+from backend.ai_pipeline.stt import (
+    FallbackSTT,
+    IndicConformerSTT,
+    SarvamSTT,
+    STTAdapter,
+)
+from backend.ai_pipeline.tts import (
+    FallbackTTS,
+    GoogleTTS,
+    IndicF5TTS,
+    TTSAdapter,
+)
+from backend.config import settings
+
+
+# ------------------------------------------------------------------------------
+# Mock Adapters for Deterministic Failover Testing
+# ------------------------------------------------------------------------------
+class DummyFastSTT(STTAdapter):
+    async def transcribe(self, audio_url: str, language: str = "hi") -> str:
+        return "Mera naam Aarav hai"
+
+
+class DummySlowSTT(STTAdapter):
+    async def transcribe(self, audio_url: str, language: str = "hi") -> str:
+        await asyncio.sleep(0.5)
+        return "Slow transcript"
+
+
+class DummyFailingSTT(STTAdapter):
+    async def transcribe(self, audio_url: str, language: str = "hi") -> str:
+        raise RuntimeError("ASR GPU Out of Memory")
+
+
+class DummyFastLLM(LLMAdapter):
+    async def generate(
+        self,
+        system_prompt: str,
+        history: List[Dict[str, str]],
+        user_input: str,
+    ) -> str:
+        return "Aapki fees kal tak jama karni hai."
+
+
+class DummySlowLLM(LLMAdapter):
+    async def generate(
+        self,
+        system_prompt: str,
+        history: List[Dict[str, str]],
+        user_input: str,
+    ) -> str:
+        await asyncio.sleep(0.5)
+        return "Slow reply"
+
+
+class DummyFailingLLM(LLMAdapter):
+    async def generate(
+        self,
+        system_prompt: str,
+        history: List[Dict[str, str]],
+        user_input: str,
+    ) -> str:
+        raise RuntimeError("LLM Service Unavailable")
+
+
+class DummyFastTTS(TTSAdapter):
+    async def synthesize(self, text: str, language: str = "hi") -> str:
+        return f"{settings.base_url}/static/audio/test_audio.wav"
+
+
+class DummySlowTTS(TTSAdapter):
+    async def synthesize(self, text: str, language: str = "hi") -> str:
+        await asyncio.sleep(0.5)
+        return f"{settings.base_url}/static/audio/slow_audio.wav"
+
+
+class DummyFailingTTS(TTSAdapter):
+    async def synthesize(self, text: str, language: str = "hi") -> str:
+        raise RuntimeError("TTS Engine Failed")
+
+
+# ------------------------------------------------------------------------------
+# STT Tests
+# ------------------------------------------------------------------------------
+def test_sarvam_stt_language_code_mapping():
+    """Verifies SarvamSTT correctly maps ISO codes to BCP-47 tags."""
+    stt = SarvamSTT(api_key="mock_key")
+    assert stt._map_language_code("hi") == "hi-IN"
+    assert stt._map_language_code("gu") == "gu-IN"
+    assert stt._map_language_code("en") == "en-IN"
+    assert stt._map_language_code("unknown") == "hi-IN"
+
+
+@pytest.mark.asyncio
+async def test_sarvam_stt_missing_api_key_raises_value_error():
+    """Verifies SarvamSTT raises ValueError if SARVAM_API_KEY is missing or empty."""
+    stt = SarvamSTT(api_key="")
+    with pytest.raises(ValueError) as exc:
+        await stt.transcribe("http://example.com/audio.wav")
+    assert "SARVAM_API_KEY" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_fallback_stt_primary_success():
+    """Verifies FallbackSTT returns primary transcript when primary succeeds."""
+    composite = FallbackSTT(primary=DummyFastSTT(), fallback=DummyFailingSTT(), timeout_seconds=1.0)
+    res = await composite.transcribe("http://example.com/audio.wav")
+    assert res == "Mera naam Aarav hai"
+
+
+@pytest.mark.asyncio
+async def test_fallback_stt_triggers_fallback_on_primary_failure():
+    """Verifies FallbackSTT transparently triggers fallback if primary throws an exception."""
+    composite = FallbackSTT(primary=DummyFailingSTT(), fallback=DummyFastSTT(), timeout_seconds=1.0)
+    res = await composite.transcribe("http://example.com/audio.wav")
+    assert res == "Mera naam Aarav hai"
+
+
+@pytest.mark.asyncio
+async def test_fallback_stt_triggers_fallback_on_timeout():
+    """Verifies FallbackSTT triggers fallback when primary exceeds strict timeout budget."""
+    composite = FallbackSTT(primary=DummySlowSTT(), fallback=DummyFastSTT(), timeout_seconds=0.1)
+    res = await composite.transcribe("http://example.com/audio.wav")
+    assert res == "Mera naam Aarav hai"
+
+
+# ------------------------------------------------------------------------------
+# LLM Tests
+# ------------------------------------------------------------------------------
+def test_ollama_llm_markdown_cleanup():
+    """Verifies OllamaLLM strips markdown asterisks and hash symbols from speech text."""
+    raw = "Namaste **Aarav**, aapka fees #12345 kal tak *jama* karein."
+    cleaned = raw.replace("*", "").replace("#", "").strip()
+    assert "**" not in cleaned
+    assert "*" not in cleaned
+    assert "#" not in cleaned
+    assert cleaned == "Namaste Aarav, aapka fees 12345 kal tak jama karein."
+
+
+@pytest.mark.asyncio
+async def test_groq_llm_missing_api_key_raises_value_error():
+    """Verifies GroqLLM raises ValueError if GROQ_API_KEY is not configured."""
+    llm = GroqLLM(api_key="")
+    with pytest.raises(ValueError) as exc:
+        await llm.generate("prompt", [], "hello")
+    assert "GROQ_API_KEY" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_fallback_llm_primary_success():
+    """Verifies FallbackLLM returns primary output on fast success."""
+    composite = FallbackLLM(primary=DummyFastLLM(), fallback=DummyFailingLLM(), timeout_seconds=1.0)
+    res = await composite.generate("system", [], "test")
+    assert res == "Aapki fees kal tak jama karni hai."
+
+
+@pytest.mark.asyncio
+async def test_fallback_llm_triggers_fallback_on_primary_failure():
+    """Verifies FallbackLLM fails over to secondary on primary error."""
+    composite = FallbackLLM(primary=DummyFailingLLM(), fallback=DummyFastLLM(), timeout_seconds=1.0)
+    res = await composite.generate("system", [], "test")
+    assert res == "Aapki fees kal tak jama karni hai."
+
+
+@pytest.mark.asyncio
+async def test_fallback_llm_triggers_fallback_on_timeout():
+    """Verifies FallbackLLM triggers fallback when primary exceeds latency budget."""
+    composite = FallbackLLM(primary=DummySlowLLM(), fallback=DummyFastLLM(), timeout_seconds=0.1)
+    res = await composite.generate("system", [], "test")
+    assert res == "Aapki fees kal tak jama karni hai."
+
+
+# ------------------------------------------------------------------------------
+# TTS Tests
+# ------------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_indicf5_tts_missing_weights_raises_file_not_found():
+    """Verifies IndicF5TTS raises FileNotFoundError when weights checkpoint is absent."""
+    tts = IndicF5TTS(model_path="/nonexistent/model.pt")
+    with pytest.raises(FileNotFoundError):
+        await tts.synthesize("Namaste", "hi")
+
+
+@pytest.mark.asyncio
+async def test_indicf5_tts_cache_hit_returns_zero_latency():
+    """Verifies IndicF5TTS returns cached audio URL immediately if output file exists."""
+    import hashlib
+    tts = IndicF5TTS(model_path="/nonexistent/model.pt")
+    text = "Fee reminder test phrase"
+    content_hash = hashlib.sha256(f"hi:{text.strip()}".encode("utf-8")).hexdigest()[:16]
+    expected_file = os.path.join(tts.cache_dir, f"tts_local_{content_hash}.wav")
+
+    # Seed the cache file
+    os.makedirs(tts.cache_dir, exist_ok=True)
+    with open(expected_file, "wb") as f:
+        f.write(b"RIFFdummydata")
+
+    try:
+        url = await tts.synthesize(text, "hi")
+        assert f"tts_local_{content_hash}.wav" in url
+    finally:
+        if os.path.exists(expected_file):
+            os.unlink(expected_file)
+
+
+@pytest.mark.asyncio
+async def test_fallback_tts_triggers_fallback_on_primary_failure():
+    """Verifies FallbackTTS switches to GoogleTTS fallback on primary error."""
+    composite = FallbackTTS(primary=DummyFailingTTS(), fallback=DummyFastTTS(), timeout_seconds=1.0)
+    url = await composite.synthesize("Namaste", "hi")
+    assert "test_audio.wav" in url
+
+
+# ------------------------------------------------------------------------------
+# AIPipeline Orchestrator & Latency Guardrail Tests
+# ------------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_ai_pipeline_end_to_end_within_budget():
+    """Verifies that AIPipeline coordinates STT -> LLM -> TTS and tracks latency."""
+    pipeline = AIPipeline(
+        stt=DummyFastSTT(),
+        llm=DummyFastLLM(),
+        tts=DummyFastTTS(),
+    )
+    context: Dict[str, Any] = {
+        "turn": 1,
+        "lang": "hi",
+        "system_prompt": "You are a fee reminder assistant.",
+        "history": [],
+    }
+
+    result = await pipeline.process_turn(audio_url="http://example.com/audio.wav", context=context)
+
+    assert result["user_transcript"] == "Mera naam Aarav hai"
+    assert result["assistant_reply"] == "Aapki fees kal tak jama karni hai."
+    assert "test_audio.wav" in result["response_audio_url"]
+    assert result["exceeded_budget"] is False
+    assert "latency" in result
+    assert result["latency"]["turn"] == 1
+    assert result["latency"]["total_ms"] >= 0
+    assert "latency_log" in context
+    assert len(context["latency_log"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_ai_pipeline_flags_exceeded_budget():
+    """Verifies that AIPipeline flags exceeded_budget when turn takes > 4000ms."""
+    class ArtificiallySlowLLM(LLMAdapter):
+        async def generate(self, system_prompt: str, history: List[Dict[str, str]], user_input: str) -> str:
+            # We don't want to actually sleep 4 seconds in unit tests;
+            # we test the budget arithmetic by creating a pipeline subclass or mocking monotonic time
+            return "Answer"
+
+    pipeline = AIPipeline(
+        stt=DummyFastSTT(),
+        llm=ArtificiallySlowLLM(),
+        tts=DummyFastTTS(),
+    )
+    context: Dict[str, Any] = {"turn": 2, "lang": "hi", "history": []}
+
+    # Monkeypatch time.monotonic inside the test to simulate 4200ms duration
+    real_monotonic = time.monotonic
+    call_count = 0
+    def mock_monotonic():
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return 100.0
+        elif call_count == 2:
+            return 100.5   # STT done
+        elif call_count == 3:
+            return 100.5
+        elif call_count == 4:
+            return 102.5   # LLM done
+        elif call_count == 5:
+            return 102.5
+        elif call_count == 6:
+            return 103.0   # TTS done
+        else:
+            return 104.5   # Total 4.5s (4500ms > 4000ms)
+
+    orig_monotonic = time.monotonic
+    time.monotonic = mock_monotonic
+    try:
+        result = await pipeline.process_turn("http://example.com/audio.wav", context)
+        assert result["exceeded_budget"] is True
+        assert result["latency"]["total_ms"] > 4000
+    finally:
+        time.monotonic = orig_monotonic

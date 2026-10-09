@@ -162,7 +162,7 @@ class SarvamSTT(STTAdapter):
         Args:
             api_key: Sarvam AI subscription key from environment.
         """
-        self.api_key = api_key or settings.sarvam_api_key
+        self.api_key = api_key if api_key is not None else settings.sarvam_api_key
         self.api_url = "https://api.sarvam.ai/speech-to-text"
         self._client: Optional[httpx.AsyncClient] = None
 

@@ -16,6 +16,7 @@ Downstream dependencies:
 """
 
 from typing import List, Optional
+import os
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -168,7 +169,7 @@ class Settings(BaseSettings):
     # Static Assets & Audio Cache
     # --------------------------------------------------------------------------
     audio_cache_dir: str = Field(
-        default="/app/audio_cache",
+        default="/app/audio_cache" if os.path.exists("/app") else "/tmp/audio_cache",
         description="Directory for caching synthesized TTS audio files",
     )
 

@@ -183,7 +183,7 @@ class GroqLLM(LLMAdapter):
             model: Target model identifier on Groq infrastructure.
             timeout_seconds: Network request timeout.
         """
-        self.api_key = api_key or settings.groq_api_key
+        self.api_key = api_key if api_key is not None else settings.groq_api_key
         self.model = model
         self.endpoint = "https://api.groq.com/openai/v1/chat/completions"
         self.timeout_seconds = timeout_seconds
