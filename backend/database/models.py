@@ -25,6 +25,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -121,6 +122,7 @@ class Student(Base):
 
     __table_args__ = (
         Index("idx_students_phone", "phone"),
+        Index("idx_students_dept_sem_active", "department", "semester", "is_active"),
     )
 
     def __repr__(self) -> str:
@@ -165,6 +167,10 @@ class CallScript(Base):
     )
     campaigns: Mapped[List["CallCampaign"]] = relationship(
         "CallCampaign", back_populates="script"
+    )
+
+    __table_args__ = (
+        Index("idx_call_scripts_created_by", "created_by"),
     )
 
     def __repr__(self) -> str:
@@ -217,6 +223,11 @@ class CallCampaign(Base):
         "StaffUser", back_populates="created_campaigns"
     )
     tasks: Mapped[List["CallTask"]] = relationship("CallTask", back_populates="campaign")
+
+    __table_args__ = (
+        Index("idx_call_campaigns_script_id", "script_id"),
+        Index("idx_call_campaigns_created_by", "created_by"),
+    )
 
     def __repr__(self) -> str:
         return f"<CallCampaign(id={self.id}, name='{self.name}', status='{self.status}')>"
@@ -288,6 +299,14 @@ class CallTask(Base):
         Index("idx_call_tasks_status", "status"),
         Index("idx_call_tasks_campaign", "campaign_id"),
         Index("idx_call_tasks_scheduled", "scheduled_at"),
+        Index("idx_call_tasks_student_id", "student_id"),
+        Index("idx_call_tasks_script_id", "script_id"),
+        Index("idx_call_tasks_campaign_status", "campaign_id", "status"),
+        Index(
+            "idx_call_tasks_pending_scheduled",
+            "scheduled_at",
+            postgresql_where=text("status = 'pending'"),
+        ),
     )
 
     def __repr__(self) -> str:

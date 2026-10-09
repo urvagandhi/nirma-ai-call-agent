@@ -37,11 +37,14 @@ from backend.config import settings
 async_engine: AsyncEngine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
-    pool_size=20,
-    max_overflow=10,
+    pool_size=10,  # Optimized for Supabase transaction poolers / PgBouncer
+    max_overflow=5,
     pool_pre_ping=True,
     pool_recycle=1800,  # Recycle connections every 30 minutes
-    connect_args={"statement_cache_size": 0},  # Safe for Supabase connection poolers / PgBouncer
+    connect_args={
+        "statement_cache_size": 0,  # Safe for Supabase connection poolers / PgBouncer
+        "server_settings": {"application_name": "nirma_ai_call_agent"},
+    },
 )
 
 async_session_factory = async_sessionmaker(
@@ -102,6 +105,7 @@ sync_engine = create_engine(
     echo=settings.debug,
     poolclass=NullPool,  # Critical for Celery fork safety
     pool_pre_ping=True,
+    connect_args={"application_name": "nirma_celery_worker"},
 )
 
 sync_session_factory = sessionmaker(

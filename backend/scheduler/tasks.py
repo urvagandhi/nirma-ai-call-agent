@@ -56,6 +56,10 @@ def dispatch_due_calls() -> int:
     Checks TRAI calling window, selects up to 10 pending tasks scheduled on or before
     the current time, and queues place_call_task jobs for execution.
 
+    Concurrency Guarantees:
+        - Upstash Redis distributed lock (TTL=25s) prevents concurrent overlapping ticks.
+        - PostgreSQL 'FOR UPDATE SKIP LOCKED' prevents thread contention across multiple workers.
+
     Returns:
         int: Number of call tasks queued in this execution tick.
     """
@@ -63,27 +67,41 @@ def dispatch_due_calls() -> int:
         logger.info("Outside TRAI calling window (09:00 - 21:00 IST). Deferring call dispatch.")
         return 0
 
+    import redis
+    redis_lock_client = redis.from_url(settings.redis_url, socket_timeout=3.0)
+    lock_acquired = redis_lock_client.set("lock:dispatcher:batch", "active", nx=True, ex=25)
+    if not lock_acquired:
+        logger.info("Another dispatcher batch task is currently executing. Skipping this tick.")
+        return 0
+
     dispatched_count = 0
-    with get_sync_session() as db:
-        # Query up to 10 pending tasks due for dispatch
-        now_utc = utc_now()
-        due_tasks = (
-            db.query(CallTask)
-            .filter(CallTask.status == "pending", CallTask.scheduled_at <= now_utc)
-            .order_by(CallTask.scheduled_at.asc())
-            .limit(10)
-            .all()
-        )
+    try:
+        with get_sync_session() as db:
+            now_utc = utc_now()
+            # SKIP LOCKED guarantees non-blocking queue processing across concurrent workers
+            due_tasks = (
+                db.query(CallTask)
+                .filter(CallTask.status == "pending", CallTask.scheduled_at <= now_utc)
+                .order_by(CallTask.scheduled_at.asc())
+                .limit(10)
+                .with_for_update(skip_locked=True)
+                .all()
+            )
 
-        for task in due_tasks:
-            # Mark task as queued to prevent duplicate pickup by concurrent ticks
-            task.status = "ringing"
-            dispatched_count += 1
-            db.commit()
+            for task in due_tasks:
+                # Mark task as ringing to prevent duplicate pickup by concurrent ticks
+                task.status = "ringing"
+                dispatched_count += 1
+                db.commit()
 
-            # Trigger asynchronous Celery task
-            place_call_task.delay(task.id)
-            logger.info("Queued place_call_task for CallTask ID %d (To: %s)", task.id, task.student_phone)
+                # Trigger asynchronous Celery task
+                place_call_task.delay(task.id)
+                logger.info("Queued place_call_task for CallTask ID %d (To: %s)", task.id, task.student_phone)
+    finally:
+        try:
+            redis_lock_client.delete("lock:dispatcher:batch")
+        except Exception:
+            pass
 
     return dispatched_count
 

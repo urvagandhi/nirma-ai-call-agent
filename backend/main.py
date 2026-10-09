@@ -70,8 +70,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     logger.info("Shutting down %s...", settings.app_name)
     try:
-        from backend.telephony.webhook_handler import redis_client
-        await redis_client.aclose()
+        from backend.database.redis_client import redis_manager
+        await redis_manager.close()
 
         from backend.database.session import async_engine
         await async_engine.dispose()

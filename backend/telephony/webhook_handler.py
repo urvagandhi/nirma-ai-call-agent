@@ -24,13 +24,13 @@ import time
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, Optional
 
-import redis.asyncio as aioredis
 from fastapi import APIRouter, Form, HTTPException, Query, Response, status
 from sqlalchemy import select
 
 from backend.ai_pipeline.pipeline import AIPipeline
 from backend.config import settings
 from backend.database.models import CallLog, CallScript, CallTask
+from backend.database.redis_client import redis_manager
 from backend.database.session import async_session_scope
 from backend.websocket.manager import ws_manager
 
@@ -38,8 +38,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhook/plivo", tags=["Plivo Webhooks"])
 
-# Initialize lazy Redis client connection
-redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+# Resilient Redis client instance via RedisManager
+redis_client = redis_manager.get_client()
 
 # Shared AI Pipeline instance
 ai_pipeline = AIPipeline()
@@ -144,9 +144,25 @@ async def handle_answer(
         "start_time": str(time.time()),
     }
 
-    await redis_client.hset(session_key, mapping=session_data)
-    await redis_client.expire(session_key, 600)  # Mandatory 600s TTL
-    logger.info("Initialized Redis call session key '%s' with TTL=600s", session_key)
+    # Batch session initialization and TTL into a single atomic network round-trip
+    async with redis_client.pipeline(transaction=True) as pipe:
+        pipe.hset(session_key, mapping=session_data)
+        pipe.expire(session_key, 600)  # Mandatory 600s TTL
+        await pipe.execute()
+    logger.info("Initialized Redis call session key '%s' with TTL=600s (pipelined)", session_key)
+
+    # Cache script template for fast zero-DB recall on future turns
+    await redis_manager.cache_set_json(
+        f"cache:script:{script.id}",
+        {
+            "id": script.id,
+            "name": script.name,
+            "language": script.language,
+            "system_prompt": script.system_prompt,
+            "opening_message": script.opening_message,
+        },
+        ttl_seconds=3600,
+    )
 
     # 4. Broadcast live status update to WebSocket clients
     await ws_manager.broadcast(
@@ -198,62 +214,74 @@ async def handle_input(
         actual_record_url,
     )
 
-    # 1. Load Redis session context
-    session_key = f"call:session:{call_uuid}"
-    session_data = await redis_client.hgetall(session_key)
+    # Acquire distributed lock with unique token to deduplicate concurrent webhook callbacks
+    lock_key = f"webhook:turn:{call_uuid}"
+    lock_acquired, lock_token = await redis_manager.acquire_lock(lock_key, ttl_seconds=15)
+    if not lock_acquired:
+        logger.warning("Duplicate/concurrent input webhook for CallUUID %s ignored.", call_uuid)
+        return Response(content="<Response/>", media_type="application/xml")
 
-    if not session_data:
-        logger.warning("Redis session key '%s' expired or missing. Terminating call.", session_key)
-        xml_resp = _build_plivo_xml_response(hangup=True)
-        return Response(content=xml_resp, media_type="application/xml")
-
-    # Reconstitute context dictionary
-    history_list = json.loads(session_data.get("history", "[]"))
-    turn_count = int(session_data.get("turn_count", "1")) + 1
-    lang = session_data.get("lang", "hi")
-    system_prompt = session_data.get("system_prompt", "")
-
-    context: Dict[str, Any] = {
-        "task_id": task_id,
-        "call_uuid": call_uuid,
-        "system_prompt": system_prompt,
-        "history": history_list,
-        "lang": lang,
-        "turn": turn_count,
-        "latency_log": [],
-    }
-
-    # 2. Run cascaded AI pipeline turn (STT -> LLM -> TTS)
     try:
-        turn_result = await ai_pipeline.process_turn(
-            audio_url=actual_record_url,
-            context=context,
-        )
-        user_transcript = turn_result["user_transcript"]
-        assistant_reply = turn_result["assistant_reply"]
-        response_audio_url = turn_result["response_audio_url"]
-    except Exception as exc:
-        logger.error("AI pipeline turn failure for task %d: %s", task_id, exc, exc_info=True)
-        # Fallback audio prompt
-        response_audio_url = await ai_pipeline.tts.synthesize(
-            "Main aapki baat samajh nahi paya. Kripya punah prayas karen.", lang
-        )
-        assistant_reply = "Main aapki baat samajh nahi paya."
-        user_transcript = ""
+        # 1. Load Redis session context
+        session_key = f"call:session:{call_uuid}"
+        session_data = await redis_client.hgetall(session_key)
 
-    # 3. Update history and turn count in Redis
-    if user_transcript:
-        history_list.append({"role": "user", "content": user_transcript})
-    history_list.append({"role": "assistant", "content": assistant_reply})
+        if not session_data:
+            logger.warning("Redis session key '%s' expired or missing. Terminating call.", session_key)
+            xml_resp = _build_plivo_xml_response(hangup=True)
+            return Response(content=xml_resp, media_type="application/xml")
 
-    await redis_client.hset(
-        session_key,
-        mapping={
-            "history": json.dumps(history_list),
-            "turn_count": str(turn_count),
-        },
-    )
-    await redis_client.expire(session_key, 600)  # Refresh 600s TTL
+        # Reconstitute context dictionary
+        history_list = json.loads(session_data.get("history", "[]"))
+        turn_count = int(session_data.get("turn_count", "1")) + 1
+        lang = session_data.get("lang", "hi")
+        system_prompt = session_data.get("system_prompt", "")
+
+        context: Dict[str, Any] = {
+            "task_id": task_id,
+            "call_uuid": call_uuid,
+            "system_prompt": system_prompt,
+            "history": history_list,
+            "lang": lang,
+            "turn": turn_count,
+            "latency_log": [],
+        }
+
+        # 2. Run cascaded AI pipeline turn (STT -> LLM -> TTS)
+        try:
+            turn_result = await ai_pipeline.process_turn(
+                audio_url=actual_record_url,
+                context=context,
+            )
+            user_transcript = turn_result["user_transcript"]
+            assistant_reply = turn_result["assistant_reply"]
+            response_audio_url = turn_result["response_audio_url"]
+        except Exception as exc:
+            logger.error("AI pipeline turn failure for task %d: %s", task_id, exc, exc_info=True)
+            # Fallback audio prompt
+            response_audio_url = await ai_pipeline.tts.synthesize(
+                "Main aapki baat samajh nahi paya. Kripya punah prayas karen.", lang
+            )
+            assistant_reply = "Main aapki baat samajh nahi paya."
+            user_transcript = ""
+
+        # 3. Update history and turn count in Redis via atomic pipeline
+        if user_transcript:
+            history_list.append({"role": "user", "content": user_transcript})
+        history_list.append({"role": "assistant", "content": assistant_reply})
+
+        async with redis_client.pipeline(transaction=True) as pipe:
+            pipe.hset(
+                session_key,
+                mapping={
+                    "history": json.dumps(history_list),
+                    "turn_count": str(turn_count),
+                },
+            )
+            pipe.expire(session_key, 600)  # Refresh 600s TTL
+            await pipe.execute()
+    finally:
+        await redis_manager.release_lock(lock_key, lock_token)
 
     # 4. Check call termination criteria (max 10 turns or explicit goodbye)
     should_hangup = turn_count >= 10 or any(
